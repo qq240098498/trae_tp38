@@ -29,12 +29,14 @@ export function PurchaseForm({ onSuccess }: PurchaseFormProps) {
   const [showSuccess, setShowSuccess] = useState(false);
 
   const addRecord = usePurchaseStore(state => state.addRecord);
-  const getRecordsByProduct = usePurchaseStore(state => state.getRecordsByProduct);
+  const records = usePurchaseStore(state => state.records);
 
   const existingRecords = useMemo(() => {
     if (!formData.productName.trim()) return [];
-    return getRecordsByProduct(formData.productName.trim());
-  }, [formData.productName, getRecordsByProduct]);
+    return records
+      .filter(r => r.productName === formData.productName.trim())
+      .sort((a, b) => new Date(b.purchaseDate).getTime() - new Date(a.purchaseDate).getTime());
+  }, [formData.productName, records]);
 
   const calculatedPrice = useMemo(() => {
     if (formData.quantity <= 0 || formData.totalPrice <= 0) return null;

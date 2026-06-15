@@ -10,7 +10,7 @@ interface AlertThresholdManagerProps {
 }
 
 export function AlertThresholdManager({ productName, stats, compact = false }: AlertThresholdManagerProps) {
-  const alertThresholds = usePurchaseStore(state => state.getAlertThresholds());
+  const alertThresholds = usePurchaseStore(state => state.alertThresholds);
   const addAlertThreshold = usePurchaseStore(state => state.addAlertThreshold);
   const removeAlertThreshold = usePurchaseStore(state => state.removeAlertThreshold);
   const toggleAlertThreshold = usePurchaseStore(state => state.toggleAlertThreshold);

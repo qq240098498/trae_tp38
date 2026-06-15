@@ -36,6 +36,7 @@ function StatCard({ title, value, subtitle, icon, gradient, delay }: StatCardPro
 }
 
 export function StatsOverview() {
+  const records = usePurchaseStore(state => state.records);
   const getTotalStats = usePurchaseStore(state => state.getTotalStats);
   const stats = getTotalStats();
 

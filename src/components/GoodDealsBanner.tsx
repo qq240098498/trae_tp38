@@ -2,23 +2,29 @@ import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Flame, ChevronRight, Sparkles } from 'lucide-react';
 import { usePurchaseStore } from '@/store/usePurchaseStore';
-import { generateStockAdvice } from '@/utils/priceCalculator';
+import { generateStockAdvice, calculatePriceStats } from '@/utils/priceCalculator';
 
 export function GoodDealsBanner() {
+  const records = usePurchaseStore(state => state.records);
   const getAllProductStats = usePurchaseStore(state => state.getAllProductStats);
-  const getRecordsByProduct = usePurchaseStore(state => state.getRecordsByProduct);
   const allStats = getAllProductStats();
 
   const goodDeals = useMemo(() => {
     return allStats
       .map(stats => {
-        const records = getRecordsByProduct(stats.productName);
-        const advice = generateStockAdvice(records, stats);
-        return { stats, advice };
+        const productRecords = records
+          .filter(r => r.productName === stats.productName)
+          .sort((a, b) => new Date(b.purchaseDate).getTime() - new Date(a.purchaseDate).getTime());
+        const currentStats = calculatePriceStats(productRecords);
+        if (!currentStats) return null;
+        const advice = generateStockAdvice(productRecords, currentStats);
+        return { stats: currentStats, advice };
       })
-      .filter(item => item.advice.isGoodPrice)
+      .filter((item): item is { stats: NonNullable<ReturnType<typeof calculatePriceStats>>; advice: ReturnType<typeof generateStockAdvice> } =>
+        item !== null && item.advice.isGoodPrice
+      )
       .sort((a, b) => b.advice.discountPercent - a.advice.discountPercent);
-  }, [allStats, getRecordsByProduct]);
+  }, [allStats, records]);
 
   if (goodDeals.length === 0) return null;
 

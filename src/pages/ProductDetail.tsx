@@ -13,19 +13,23 @@ export function ProductDetail() {
   const { id } = useParams<{ id: string }>();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
 
-  const getRecordsByProduct = usePurchaseStore(state => state.getRecordsByProduct);
-  const getProductStats = usePurchaseStore(state => state.getProductStats);
+  const records = usePurchaseStore(state => state.records);
+  const alertThresholds = usePurchaseStore(state => state.alertThresholds);
   const deleteRecord = usePurchaseStore(state => state.deleteRecord);
-  const getAlertThresholdByProduct = usePurchaseStore(state => state.getAlertThresholdByProduct);
   const products = usePurchaseStore(state => state.products);
+  const calculatePriceStatsFn = usePurchaseStore(state => state.getProductStats);
 
   const product = products.find(p => p.id === id);
-  const records = product ? getRecordsByProduct(product.name) : [];
-  const stats = product ? getProductStats(product.name) : null;
+  const productRecords = product
+    ? records
+        .filter(r => r.productName === product.name)
+        .sort((a, b) => new Date(b.purchaseDate).getTime() - new Date(a.purchaseDate).getTime())
+    : [];
+  const stats = product ? calculatePriceStatsFn(product.name) : null;
 
-  const stockAdvice = stats ? generateStockAdvice(records, stats) : null;
-  const priceCycle = product ? analyzePriceCycle(records) : null;
-  const alertThreshold = product ? getAlertThresholdByProduct(product.name) : undefined;
+  const stockAdvice = stats ? generateStockAdvice(productRecords, stats) : null;
+  const priceCycle = product ? analyzePriceCycle(productRecords) : null;
+  const alertThreshold = product ? alertThresholds.find(t => t.productName === product.name) : undefined;
 
   if (!product) {
     return (
@@ -152,7 +156,7 @@ export function ProductDetail() {
         )}
 
         <div className="mb-8 animate-fade-in-up" style={{ animationDelay: '550ms' }}>
-          <PriceChart records={records} stats={stats} />
+          <PriceChart records={productRecords} stats={stats} />
         </div>
 
         <div className="mb-8 animate-fade-in-up" style={{ animationDelay: '600ms' }}>
@@ -183,7 +187,7 @@ export function ProductDetail() {
             </div>
           )}
 
-          <PurchaseHistory records={records} onDelete={handleDeleteRecord} />
+          <PurchaseHistory records={productRecords} onDelete={handleDeleteRecord} />
         </div>
       </div>
     </div>

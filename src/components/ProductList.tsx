@@ -8,6 +8,8 @@ export function ProductList() {
   const [searchKeyword, setSearchKeyword] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
+  const records = usePurchaseStore(state => state.records);
+  const products = usePurchaseStore(state => state.products);
   const getAllProductStats = usePurchaseStore(state => state.getAllProductStats);
   const allStats = getAllProductStats();
 
@@ -19,22 +21,22 @@ export function ProductList() {
       
       const matchesCategory = selectedCategory === 'all' || 
         allStats.some(s => {
-          const product = usePurchaseStore.getState().products.find(p => p.id === stats.productId);
+          const product = products.find(p => p.id === stats.productId);
           return product?.category === selectedCategory;
         });
       
       return matchesSearch && matchesCategory;
     });
-  }, [allStats, searchKeyword, selectedCategory]);
+  }, [allStats, searchKeyword, selectedCategory, products]);
 
   const productCategories = useMemo(() => {
     const categories = new Set<string>();
     allStats.forEach(stats => {
-      const product = usePurchaseStore.getState().products.find(p => p.id === stats.productId);
+      const product = products.find(p => p.id === stats.productId);
       if (product) categories.add(product.category);
     });
     return Array.from(categories);
-  }, [allStats]);
+  }, [allStats, products]);
 
   return (
     <div className="animate-fade-in-up" style={{ animationDelay: '400ms' }}>
