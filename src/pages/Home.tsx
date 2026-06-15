@@ -2,6 +2,7 @@ import { ShoppingCart, TrendingUp, Settings, RefreshCw } from 'lucide-react';
 import { StatsOverview } from '@/components/StatsOverview';
 import { PurchaseForm } from '@/components/PurchaseForm';
 import { ProductList } from '@/components/ProductList';
+import { GoodDealsBanner } from '@/components/GoodDealsBanner';
 import { usePurchaseStore } from '@/store/usePurchaseStore';
 import { useState } from 'react';
 
@@ -68,6 +69,7 @@ export default function Home() {
 
       <main className="container mx-auto px-4 py-8">
         <StatsOverview />
+        <GoodDealsBanner />
         <PurchaseForm />
         <ProductList />
       </main>

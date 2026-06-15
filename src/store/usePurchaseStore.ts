@@ -1,12 +1,13 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { PurchaseRecord, Product, PurchaseFormData, PriceStats } from '@/types';
+import { PurchaseRecord, Product, PurchaseFormData, PriceStats, AlertThreshold } from '@/types';
 import { generateId, calculateStandardPrice, calculatePriceStats, getTodayDateString } from '@/utils/priceCalculator';
 import { mockProducts, mockPurchaseRecords } from '@/data/mockData';
 
 interface PurchaseState {
   records: PurchaseRecord[];
   products: Product[];
+  alertThresholds: AlertThreshold[];
   isInitialized: boolean;
   
   addRecord: (formData: PurchaseFormData) => { record: PurchaseRecord; isNewProduct: boolean };
@@ -23,6 +24,11 @@ interface PurchaseState {
     totalSpent: number;
     thisMonthRecords: number;
   };
+  addAlertThreshold: (productName: string, thresholdPrice: number, standardUnitLabel: string) => void;
+  removeAlertThreshold: (id: string) => void;
+  toggleAlertThreshold: (id: string) => void;
+  getAlertThresholds: () => AlertThreshold[];
+  getAlertThresholdByProduct: (productName: string) => AlertThreshold | undefined;
 }
 
 const STORAGE_KEY = 'purchase-tracker-storage';
@@ -60,6 +66,7 @@ export const usePurchaseStore = create<PurchaseState>()(
     (set, get) => ({
       records: [],
       products: [],
+      alertThresholds: [],
       isInitialized: false,
 
       addRecord: (formData: PurchaseFormData) => {
@@ -175,6 +182,53 @@ export const usePurchaseStore = create<PurchaseState>()(
           totalSpent: Number(totalSpent.toFixed(2)),
           thisMonthRecords: thisMonthRecords.length,
         };
+      },
+
+      addAlertThreshold: (productName: string, thresholdPrice: number, standardUnitLabel: string) => {
+        const state = get();
+        const existingThreshold = state.alertThresholds.find(t => t.productName === productName);
+        
+        if (existingThreshold) {
+          set({
+            alertThresholds: state.alertThresholds.map(t =>
+              t.productName === productName
+                ? { ...t, thresholdPrice, standardUnitLabel, enabled: true }
+                : t
+            ),
+          });
+        } else {
+          const newThreshold: AlertThreshold = {
+            id: generateId(),
+            productName,
+            thresholdPrice,
+            standardUnitLabel,
+            createdAt: new Date().toISOString(),
+            enabled: true,
+          };
+          set({ alertThresholds: [...state.alertThresholds, newThreshold] });
+        }
+      },
+
+      removeAlertThreshold: (id: string) => {
+        const state = get();
+        set({ alertThresholds: state.alertThresholds.filter(t => t.id !== id) });
+      },
+
+      toggleAlertThreshold: (id: string) => {
+        const state = get();
+        set({
+          alertThresholds: state.alertThresholds.map(t =>
+            t.id === id ? { ...t, enabled: !t.enabled } : t
+          ),
+        });
+      },
+
+      getAlertThresholds: () => {
+        return get().alertThresholds;
+      },
+
+      getAlertThresholdByProduct: (productName: string) => {
+        return get().alertThresholds.find(t => t.productName === productName);
       },
     }),
     {

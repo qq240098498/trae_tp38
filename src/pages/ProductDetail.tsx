@@ -5,6 +5,9 @@ import { usePurchaseStore } from '@/store/usePurchaseStore';
 import { PriceChart } from '@/components/PriceChart';
 import { PurchaseHistory } from '@/components/PurchaseHistory';
 import { PurchaseForm } from '@/components/PurchaseForm';
+import { StockAdviceCard } from '@/components/StockAdviceCard';
+import { AlertThresholdManager } from '@/components/AlertThresholdManager';
+import { analyzePriceCycle, generateStockAdvice } from '@/utils/priceCalculator';
 
 export function ProductDetail() {
   const { id } = useParams<{ id: string }>();
@@ -13,11 +16,16 @@ export function ProductDetail() {
   const getRecordsByProduct = usePurchaseStore(state => state.getRecordsByProduct);
   const getProductStats = usePurchaseStore(state => state.getProductStats);
   const deleteRecord = usePurchaseStore(state => state.deleteRecord);
+  const getAlertThresholdByProduct = usePurchaseStore(state => state.getAlertThresholdByProduct);
   const products = usePurchaseStore(state => state.products);
 
   const product = products.find(p => p.id === id);
   const records = product ? getRecordsByProduct(product.name) : [];
   const stats = product ? getProductStats(product.name) : null;
+
+  const stockAdvice = stats ? generateStockAdvice(records, stats) : null;
+  const priceCycle = product ? analyzePriceCycle(records) : null;
+  const alertThreshold = product ? getAlertThresholdByProduct(product.name) : undefined;
 
   if (!product) {
     return (
@@ -123,15 +131,35 @@ export function ProductDetail() {
           </div>
         )}
 
-        <div className="mb-8 animate-fade-in-up" style={{ animationDelay: '400ms' }}>
+        {stockAdvice && (
+          <div className="mb-8 animate-fade-in-up" style={{ animationDelay: '400ms' }}>
+            <StockAdviceCard
+              advice={stockAdvice}
+              cyclePattern={priceCycle}
+              alertThreshold={alertThreshold}
+            />
+          </div>
+        )}
+
+        {stats && (
+          <div className="mb-8 animate-fade-in-up" style={{ animationDelay: '450ms' }}>
+            <AlertThresholdManager
+              productName={product?.name}
+              stats={stats}
+              compact
+            />
+          </div>
+        )}
+
+        <div className="mb-8 animate-fade-in-up" style={{ animationDelay: '550ms' }}>
           <PriceChart records={records} stats={stats} />
         </div>
 
-        <div className="mb-8 animate-fade-in-up" style={{ animationDelay: '500ms' }}>
+        <div className="mb-8 animate-fade-in-up" style={{ animationDelay: '600ms' }}>
           <PurchaseForm />
         </div>
 
-        <div className="animate-fade-in-up" style={{ animationDelay: '600ms' }}>
+        <div className="animate-fade-in-up" style={{ animationDelay: '650ms' }}>
           {showDeleteConfirm && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
               <div className="bg-white rounded-2xl p-6 max-w-sm mx-4 animate-bounce-in">

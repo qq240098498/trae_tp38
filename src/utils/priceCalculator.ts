@@ -1,4 +1,4 @@
-import { UnitType, PurchaseRecord, PriceStats, PriceComparison } from '@/types';
+import { UnitType, PurchaseRecord, PriceStats, PriceComparison, PriceCyclePattern, StockAdvice } from '@/types';
 
 interface UnitConversion {
   toStandard: number;
@@ -132,4 +132,133 @@ export function suggestUnitForCategory(category: string): UnitType {
     '个护': 'ml',
   };
   return suggestions[category] || '个';
+}
+
+export function analyzePriceCycle(records: PurchaseRecord[]): PriceCyclePattern | null {
+  if (records.length < 3) return null;
+
+  const sortedByDate = [...records].sort((a, b) =>
+    new Date(a.purchaseDate).getTime() - new Date(b.purchaseDate).getTime()
+  );
+
+  const avgPrice = sortedByDate.reduce((sum, r) => sum + r.unitPriceStandard, 0) / sortedByDate.length;
+  const lowPriceRecords = sortedByDate.filter(r => r.unitPriceStandard <= avgPrice * 0.9);
+
+  if (lowPriceRecords.length < 2) {
+    return {
+      productName: sortedByDate[0].productName,
+      averageCycleDays: 60,
+      cycleDescription: '数据不足，暂未发现明显规律',
+      lowPricePattern: '建议持续关注价格变化',
+      nextExpectedLowDate: '',
+    };
+  }
+
+  const lowDates = lowPriceRecords.map(r => new Date(r.purchaseDate).getTime());
+  const intervals: number[] = [];
+  
+  for (let i = 1; i < lowDates.length; i++) {
+    intervals.push((lowDates[i] - lowDates[i - 1]) / (1000 * 60 * 60 * 24));
+  }
+
+  const averageCycleDays = intervals.length > 0
+    ? Math.round(intervals.reduce((a, b) => a + b, 0) / intervals.length)
+    : 60;
+
+  let cycleDescription = '';
+  if (averageCycleDays <= 30) {
+    cycleDescription = '约每月大促一次';
+  } else if (averageCycleDays <= 45) {
+    cycleDescription = '约每1.5个月大促一次';
+  } else if (averageCycleDays <= 75) {
+    cycleDescription = '约每2个月大促一次';
+  } else if (averageCycleDays <= 105) {
+    cycleDescription = '约每3个月大促一次';
+  } else {
+    cycleDescription = `约每${Math.round(averageCycleDays / 30)}个月大促一次`;
+  }
+
+  const categories = [...new Set(records.map(r => r.location))];
+  const lowPriceByCategory = lowPriceRecords.reduce((acc, r) => {
+    acc[r.location] = (acc[r.location] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+  const bestLocation = Object.entries(lowPriceByCategory).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+
+  const lowPricePattern = bestLocation
+    ? `低价多在${bestLocation}出现`
+    : '各渠道价格波动相似';
+
+  const lastLowDate = lowDates[lowDates.length - 1];
+  const nextExpectedLow = new Date(lastLowDate + averageCycleDays * 24 * 60 * 60 * 1000);
+  const nextExpectedLowDate = formatDate(nextExpectedLow.toISOString().split('T')[0]);
+
+  return {
+    productName: sortedByDate[0].productName,
+    averageCycleDays,
+    cycleDescription,
+    lowPricePattern,
+    nextExpectedLowDate,
+  };
+}
+
+export function generateStockAdvice(
+  records: PurchaseRecord[],
+  stats: PriceStats
+): StockAdvice {
+  const { avgPrice, latestPrice, standardUnitLabel } = stats;
+  const discountPercent = avgPrice > 0
+    ? Number((((avgPrice - latestPrice) / avgPrice) * 100).toFixed(1))
+    : 0;
+  const isGoodPrice = discountPercent >= 10;
+
+  let suggestedQuantity = 1;
+  let reason = '';
+
+  if (isGoodPrice) {
+    const cycle = analyzePriceCycle(records);
+    const cycleDays = cycle?.averageCycleDays || 60;
+
+    if (discountPercent >= 30) {
+      suggestedQuantity = Math.max(3, Math.ceil(cycleDays / 20));
+      reason = `价格低于均价${discountPercent}%，力度很大，建议多囤`;
+    } else if (discountPercent >= 20) {
+      suggestedQuantity = Math.max(2, Math.ceil(cycleDays / 30));
+      reason = `价格低于均价${discountPercent}%，优惠明显，建议适量囤货`;
+    } else {
+      suggestedQuantity = Math.max(1, Math.ceil(cycleDays / 60));
+      reason = `价格低于均价${discountPercent}%，有一定优惠，可考虑囤货`;
+    }
+  } else if (discountPercent >= 0) {
+    reason = `当前价格接近历史均价，优惠不明显`;
+    suggestedQuantity = 1;
+  } else {
+    reason = `当前价格高于均价${Math.abs(discountPercent)}%，不建议囤货`;
+    suggestedQuantity = 0;
+  }
+
+  const unit = standardUnitLabel.replace('元/', '');
+
+  return {
+    productName: stats.productName,
+    isGoodPrice,
+    discountPercent,
+    suggestedQuantity,
+    suggestedUnit: unit,
+    reason,
+    standardUnitLabel,
+  };
+}
+
+export function checkPriceAlert(
+  currentPrice: number,
+  thresholdPrice: number
+): { triggered: boolean; difference: number } {
+  if (thresholdPrice <= 0) return { triggered: false, difference: 0 };
+  
+  const difference = Number((thresholdPrice - currentPrice).toFixed(2));
+  return {
+    triggered: currentPrice <= thresholdPrice,
+    difference,
+  };
 }

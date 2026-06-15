@@ -67,6 +67,33 @@ export interface PriceComparison {
   differencePercent: number;
 }
 
+export interface PriceCyclePattern {
+  productName: string;
+  averageCycleDays: number;
+  cycleDescription: string;
+  lowPricePattern: string;
+  nextExpectedLowDate: string;
+}
+
+export interface StockAdvice {
+  productName: string;
+  isGoodPrice: boolean;
+  discountPercent: number;
+  suggestedQuantity: number;
+  suggestedUnit: string;
+  reason: string;
+  standardUnitLabel: string;
+}
+
+export interface AlertThreshold {
+  id: string;
+  productName: string;
+  thresholdPrice: number;
+  standardUnitLabel: string;
+  createdAt: string;
+  enabled: boolean;
+}
+
 export const CATEGORIES: Category[] = ['食品', '日用品', '饮品', '粮油', '个护', '其他'];
 
 export const UNIT_TYPES: UnitType[] = ['ml', 'l', 'g', 'kg', '斤', '个', '盒', '包', '卷', '抽', '其他'];

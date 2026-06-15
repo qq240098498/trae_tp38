@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { TrendingDown, TrendingUp, Minus, ArrowRight, MapPin } from 'lucide-react';
+import { TrendingDown, TrendingUp, Minus, ArrowRight, MapPin, Flame } from 'lucide-react';
 import { PriceStats } from '@/types';
 import { getDaysAgo } from '@/utils/priceCalculator';
 
@@ -14,14 +14,25 @@ export function ProductCard({ stats, delay = 0 }: ProductCardProps) {
     ? Math.round((priceDiff / stats.minPrice) * 100) 
     : 0;
 
+  const discountFromAvg = stats.avgPrice > 0
+    ? Math.round(((stats.avgPrice - stats.latestPrice) / stats.avgPrice) * 100)
+    : 0;
+  const isGoodPrice = discountFromAvg >= 10;
+
   return (
     <Link
       to={`/product/${stats.productId}`}
-      className="card group animate-fade-in-up cursor-pointer block"
+      className="card group animate-fade-in-up cursor-pointer block relative overflow-hidden"
       style={{ animationDelay: `${delay}ms` }}
     >
+      {isGoodPrice && (
+        <div className="absolute top-3 right-3 bg-gradient-to-r from-secondary-500 to-emerald-500 text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg shadow-secondary-200 flex items-center gap-1 animate-pulse">
+          <Flame className="w-3 h-3" />
+          好价可囤
+        </div>
+      )}
       <div className="flex items-start justify-between mb-4">
-        <div>
+        <div className="pr-16">
           <h3 className="text-lg font-bold text-warmGray-800 group-hover:text-primary-600 transition-colors">
             {stats.productName}
           </h3>
