@@ -1,4 +1,4 @@
-import { UnitType, PurchaseRecord, PriceStats, PriceComparison, PriceCyclePattern, StockAdvice } from '@/types';
+import { UnitType, PurchaseRecord, PriceStats, PriceComparison, PriceCyclePattern, StockAdvice, ShoppingListItem, ChannelPriceEstimate } from '@/types';
 
 interface UnitConversion {
   toStandard: number;
@@ -261,4 +261,144 @@ export function checkPriceAlert(
     triggered: currentPrice <= thresholdPrice,
     difference,
   };
+}
+
+export function getLatestPriceByLocation(
+  records: PurchaseRecord[],
+  productName: string,
+  location: string
+): { unitPrice: number; standardPrice: number; date: string } | null {
+  const productRecords = records
+    .filter(r => r.productName === productName && r.location === location)
+    .sort((a, b) => new Date(b.purchaseDate).getTime() - new Date(a.purchaseDate).getTime());
+
+  if (productRecords.length === 0) return null;
+
+  const latest = productRecords[0];
+  return {
+    unitPrice: latest.unitPrice,
+    standardPrice: latest.unitPriceStandard,
+    date: latest.purchaseDate,
+  };
+}
+
+export function getLatestPriceAnyLocation(
+  records: PurchaseRecord[],
+  productName: string
+): { unitPrice: number; standardPrice: number; location: string; date: string } | null {
+  const productRecords = records
+    .filter(r => r.productName === productName)
+    .sort((a, b) => new Date(b.purchaseDate).getTime() - new Date(a.purchaseDate).getTime());
+
+  if (productRecords.length === 0) return null;
+
+  const latest = productRecords[0];
+  return {
+    unitPrice: latest.unitPrice,
+    standardPrice: latest.unitPriceStandard,
+    location: latest.location,
+    date: latest.purchaseDate,
+  };
+}
+
+export function getAvailableLocations(records: PurchaseRecord[]): string[] {
+  return [...new Set(records.map(r => r.location))].filter(l => l && l !== '其他');
+}
+
+export function estimateChannelPrice(
+  records: PurchaseRecord[],
+  items: ShoppingListItem[],
+  location: string
+): ChannelPriceEstimate {
+  const breakdown: ChannelPriceEstimate['itemBreakdown'] = [];
+  const missingItems: string[] = [];
+  let totalPrice = 0;
+
+  for (const item of items) {
+    const manualPrice = item.manualPrices[location];
+    
+    if (manualPrice !== undefined && manualPrice > 0) {
+      const itemTotal = Number((manualPrice * item.quantity).toFixed(2));
+      breakdown.push({
+        productName: item.productName,
+        unitPrice: manualPrice,
+        totalPrice: itemTotal,
+        quantity: item.quantity,
+        source: 'manual',
+      });
+      totalPrice += itemTotal;
+      continue;
+    }
+
+    const locationPrice = getLatestPriceByLocation(records, item.productName, location);
+    if (locationPrice) {
+      const itemTotal = Number((locationPrice.unitPrice * item.quantity).toFixed(2));
+      breakdown.push({
+        productName: item.productName,
+        unitPrice: locationPrice.unitPrice,
+        totalPrice: itemTotal,
+        quantity: item.quantity,
+        source: 'history',
+      });
+      totalPrice += itemTotal;
+      continue;
+    }
+
+    const anyLocationPrice = getLatestPriceAnyLocation(records, item.productName);
+    if (anyLocationPrice) {
+      const itemTotal = Number((anyLocationPrice.unitPrice * item.quantity).toFixed(2));
+      breakdown.push({
+        productName: item.productName,
+        unitPrice: anyLocationPrice.unitPrice,
+        totalPrice: itemTotal,
+        quantity: item.quantity,
+        source: 'estimated',
+        estimatedFrom: anyLocationPrice.location,
+      });
+      totalPrice += itemTotal;
+      continue;
+    }
+
+    missingItems.push(item.productName);
+  }
+
+  return {
+    location,
+    totalPrice: Number(totalPrice.toFixed(2)),
+    itemBreakdown: breakdown,
+    missingItems,
+    isComplete: missingItems.length === 0,
+  };
+}
+
+export function estimateAllChannels(
+  records: PurchaseRecord[],
+  items: ShoppingListItem[],
+  commonLocations: string[]
+): ChannelPriceEstimate[] {
+  const availableLocations = getAvailableLocations(records);
+  const allLocations = [...new Set([...commonLocations.filter(l => l !== '其他'), ...availableLocations])];
+  
+  return allLocations
+    .map(location => estimateChannelPrice(records, items, location))
+    .filter(estimate => estimate.itemBreakdown.length > 0)
+    .sort((a, b) => a.totalPrice - b.totalPrice);
+}
+
+export function getShoppingListTotal(
+  items: ShoppingListItem[],
+  manualPrices?: Record<string, Record<string, number>>
+): number {
+  let total = 0;
+  for (const item of items) {
+    if (manualPrices) {
+      for (const location of Object.keys(manualPrices)) {
+        const price = manualPrices[location][item.id];
+        if (price) {
+          total += price * item.quantity;
+        }
+      }
+    }
+  }
+  return Number(total.toFixed(2));
 }

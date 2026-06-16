@@ -20,6 +20,7 @@ function createMockRecord(
     id: generateId(),
     productId,
     productName,
+    category,
     purchaseDate,
     location,
     brand,

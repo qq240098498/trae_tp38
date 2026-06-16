@@ -1,13 +1,17 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { PurchaseRecord, Product, PurchaseFormData, PriceStats, AlertThreshold } from '@/types';
-import { generateId, calculateStandardPrice, calculatePriceStats, getTodayDateString } from '@/utils/priceCalculator';
+import { PurchaseRecord, Product, PurchaseFormData, PriceStats, AlertThreshold, ShoppingList, ShoppingListItem, ShoppingListItemForm } from '@/types';
+import { generateId, calculateStandardPrice, calculatePriceStats, getTodayDateString, estimateAllChannels } from '@/utils/priceCalculator';
+import type { ChannelPriceEstimate } from '@/types';
 import { mockProducts, mockPurchaseRecords } from '@/data/mockData';
+import { COMMON_LOCATIONS } from '@/types';
 
 interface PurchaseState {
   records: PurchaseRecord[];
   products: Product[];
   alertThresholds: AlertThreshold[];
+  shoppingLists: ShoppingList[];
+  activeShoppingListId: string | null;
   isInitialized: boolean;
   
   addRecord: (formData: PurchaseFormData) => { record: PurchaseRecord; isNewProduct: boolean };
@@ -29,6 +33,17 @@ interface PurchaseState {
   toggleAlertThreshold: (id: string) => void;
   getAlertThresholds: () => AlertThreshold[];
   getAlertThresholdByProduct: (productName: string) => AlertThreshold | undefined;
+  
+  createShoppingList: (name: string) => ShoppingList;
+  deleteShoppingList: (id: string) => void;
+  setActiveShoppingList: (id: string | null) => void;
+  addShoppingListItem: (listId: string, itemForm: ShoppingListItemForm) => void;
+  removeShoppingListItem: (listId: string, itemId: string) => void;
+  updateShoppingListItem: (listId: string, itemId: string, updates: Partial<ShoppingListItem>) => void;
+  setItemManualPrice: (listId: string, itemId: string, location: string, price: number) => void;
+  toggleShoppingListItem: (listId: string, itemId: string) => void;
+  getShoppingListPriceEstimates: (listId: string) => ChannelPriceEstimate[];
+  getActiveShoppingList: () => ShoppingList | null;
 }
 
 const STORAGE_KEY = 'purchase-tracker-storage';
@@ -67,6 +82,8 @@ export const usePurchaseStore = create<PurchaseState>()(
       records: [],
       products: [],
       alertThresholds: [],
+      shoppingLists: [],
+      activeShoppingListId: null,
       isInitialized: false,
 
       addRecord: (formData: PurchaseFormData) => {
@@ -88,6 +105,7 @@ export const usePurchaseStore = create<PurchaseState>()(
           id: generateId(),
           productId: product.id,
           productName: formData.productName,
+          category: formData.category,
           purchaseDate: formData.purchaseDate || getTodayDateString(),
           location: formData.location,
           brand: formData.brand,
@@ -229,6 +247,146 @@ export const usePurchaseStore = create<PurchaseState>()(
 
       getAlertThresholdByProduct: (productName: string) => {
         return get().alertThresholds.find(t => t.productName === productName);
+      },
+
+      createShoppingList: (name: string) => {
+        const state = get();
+        const newList: ShoppingList = {
+          id: generateId(),
+          name,
+          items: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        set({
+          shoppingLists: [...state.shoppingLists, newList],
+          activeShoppingListId: newList.id,
+        });
+        return newList;
+      },
+
+      deleteShoppingList: (id: string) => {
+        const state = get();
+        const updatedLists = state.shoppingLists.filter(l => l.id !== id);
+        const newActiveId = state.activeShoppingListId === id 
+          ? (updatedLists.length > 0 ? updatedLists[0].id : null)
+          : state.activeShoppingListId;
+        set({
+          shoppingLists: updatedLists,
+          activeShoppingListId: newActiveId,
+        });
+      },
+
+      setActiveShoppingList: (id: string | null) => {
+        set({ activeShoppingListId: id });
+      },
+
+      addShoppingListItem: (listId: string, itemForm: ShoppingListItemForm) => {
+        const state = get();
+        const newItem: ShoppingListItem = {
+          id: generateId(),
+          ...itemForm,
+          manualPrices: {},
+          checked: false,
+        };
+        set({
+          shoppingLists: state.shoppingLists.map(list =>
+            list.id === listId
+              ? {
+                  ...list,
+                  items: [...list.items, newItem],
+                  updatedAt: new Date().toISOString(),
+                }
+              : list
+          ),
+        });
+      },
+
+      removeShoppingListItem: (listId: string, itemId: string) => {
+        const state = get();
+        set({
+          shoppingLists: state.shoppingLists.map(list =>
+            list.id === listId
+              ? {
+                  ...list,
+                  items: list.items.filter(item => item.id !== itemId),
+                  updatedAt: new Date().toISOString(),
+                }
+              : list
+          ),
+        });
+      },
+
+      updateShoppingListItem: (listId: string, itemId: string, updates: Partial<ShoppingListItem>) => {
+        const state = get();
+        set({
+          shoppingLists: state.shoppingLists.map(list =>
+            list.id === listId
+              ? {
+                  ...list,
+                  items: list.items.map(item =>
+                    item.id === itemId ? { ...item, ...updates } : item
+                  ),
+                  updatedAt: new Date().toISOString(),
+                }
+              : list
+          ),
+        });
+      },
+
+      setItemManualPrice: (listId: string, itemId: string, location: string, price: number) => {
+        const state = get();
+        set({
+          shoppingLists: state.shoppingLists.map(list =>
+            list.id === listId
+              ? {
+                  ...list,
+                  items: list.items.map(item =>
+                    item.id === itemId
+                      ? {
+                          ...item,
+                          manualPrices: {
+                            ...item.manualPrices,
+                            [location]: price,
+                          },
+                        }
+                      : item
+                  ),
+                  updatedAt: new Date().toISOString(),
+                }
+              : list
+          ),
+        });
+      },
+
+      toggleShoppingListItem: (listId: string, itemId: string) => {
+        const state = get();
+        set({
+          shoppingLists: state.shoppingLists.map(list =>
+            list.id === listId
+              ? {
+                  ...list,
+                  items: list.items.map(item =>
+                    item.id === itemId ? { ...item, checked: !item.checked } : item
+                  ),
+                  updatedAt: new Date().toISOString(),
+                }
+              : list
+          ),
+        });
+      },
+
+      getShoppingListPriceEstimates: (listId: string) => {
+        const state = get();
+        const list = state.shoppingLists.find(l => l.id === listId);
+        if (!list || list.items.length === 0) return [];
+        return estimateAllChannels(state.records, list.items, COMMON_LOCATIONS);
+      },
+
+      getActiveShoppingList: () => {
+        const state = get();
+        if (!state.activeShoppingListId) return null;
+        return state.shoppingLists.find(l => l.id === state.activeShoppingListId) || null;
       },
     }),
     {

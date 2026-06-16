@@ -15,6 +15,7 @@ export interface PurchaseRecord {
   id: string;
   productId: string;
   productName: string;
+  category: Category;
   purchaseDate: string;
   location: string;
   brand: string;
@@ -112,3 +113,43 @@ export const CATEGORY_ICONS: Record<Category, string> = {
   '个护': '🧼',
   '其他': '📦',
 };
+
+export interface ShoppingListItem {
+  id: string;
+  productName: string;
+  quantity: number;
+  unit: UnitType;
+  category: Category;
+  manualPrices: Record<string, number>;
+  checked: boolean;
+}
+
+export interface ShoppingList {
+  id: string;
+  name: string;
+  items: ShoppingListItem[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChannelPriceEstimate {
+  location: string;
+  totalPrice: number;
+  itemBreakdown: {
+    productName: string;
+    unitPrice: number;
+    totalPrice: number;
+    quantity: number;
+    source: 'history' | 'manual' | 'estimated';
+    estimatedFrom?: string;
+  }[];
+  missingItems: string[];
+  isComplete: boolean;
+}
+
+export interface ShoppingListItemForm {
+  productName: string;
+  quantity: number;
+  unit: UnitType;
+  category: Category;
+}

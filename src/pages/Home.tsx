@@ -3,6 +3,7 @@ import { StatsOverview } from '@/components/StatsOverview';
 import { PurchaseForm } from '@/components/PurchaseForm';
 import { ProductList } from '@/components/ProductList';
 import { GoodDealsBanner } from '@/components/GoodDealsBanner';
+import { ShoppingList } from '@/components/ShoppingList';
 import { usePurchaseStore } from '@/store/usePurchaseStore';
 import { useState } from 'react';
 
@@ -70,6 +71,7 @@ export default function Home() {
       <main className="container mx-auto px-4 py-8">
         <StatsOverview />
         <GoodDealsBanner />
+        <ShoppingList />
         <PurchaseForm />
         <ProductList />
       </main>
