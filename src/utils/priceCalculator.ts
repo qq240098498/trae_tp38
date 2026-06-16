@@ -267,7 +267,7 @@ export function getLatestPriceByLocation(
   records: PurchaseRecord[],
   productName: string,
   location: string
-): { unitPrice: number; standardPrice: number; date: string } | null {
+): { unitPrice: number; standardPrice: number; standardUnitLabel: string; date: string; unit: UnitType } | null {
   const productRecords = records
     .filter(r => r.productName === productName && r.location === location)
     .sort((a, b) => new Date(b.purchaseDate).getTime() - new Date(a.purchaseDate).getTime());
@@ -278,14 +278,16 @@ export function getLatestPriceByLocation(
   return {
     unitPrice: latest.unitPrice,
     standardPrice: latest.unitPriceStandard,
+    standardUnitLabel: latest.standardUnitLabel,
     date: latest.purchaseDate,
+    unit: latest.unit,
   };
 }
 
 export function getLatestPriceAnyLocation(
   records: PurchaseRecord[],
   productName: string
-): { unitPrice: number; standardPrice: number; location: string; date: string } | null {
+): { unitPrice: number; standardPrice: number; standardUnitLabel: string; location: string; date: string; unit: UnitType } | null {
   const productRecords = records
     .filter(r => r.productName === productName)
     .sort((a, b) => new Date(b.purchaseDate).getTime() - new Date(a.purchaseDate).getTime());
@@ -296,8 +298,10 @@ export function getLatestPriceAnyLocation(
   return {
     unitPrice: latest.unitPrice,
     standardPrice: latest.unitPriceStandard,
+    standardUnitLabel: latest.standardUnitLabel,
     location: latest.location,
     date: latest.purchaseDate,
+    unit: latest.unit,
   };
 }
 
@@ -319,11 +323,17 @@ export function estimateChannelPrice(
     
     if (manualPrice !== undefined && manualPrice > 0) {
       const itemTotal = Number((manualPrice * item.quantity).toFixed(2));
+      const conversion = UNIT_CONVERSIONS[item.unit];
+      const standardQty = item.quantity * conversion.toStandard;
+      const standardUnitPrice = standardQty > 0 ? Number((itemTotal / standardQty).toFixed(2)) : 0;
       breakdown.push({
         productName: item.productName,
         unitPrice: manualPrice,
         totalPrice: itemTotal,
         quantity: item.quantity,
+        unit: item.unit,
+        standardUnitPrice,
+        standardUnitLabel: `元/${conversion.standardUnit}`,
         source: 'manual',
       });
       totalPrice += itemTotal;
@@ -332,12 +342,21 @@ export function estimateChannelPrice(
 
     const locationPrice = getLatestPriceByLocation(records, item.productName, location);
     if (locationPrice) {
-      const itemTotal = Number((locationPrice.unitPrice * item.quantity).toFixed(2));
+      const itemTotal = calculateItemTotalFromStandardPrice(
+        locationPrice.standardPrice,
+        locationPrice.standardUnitLabel,
+        item.quantity,
+        item.unit
+      );
+      const itemUnitPrice = item.quantity > 0 ? Number((itemTotal / item.quantity).toFixed(2)) : 0;
       breakdown.push({
         productName: item.productName,
-        unitPrice: locationPrice.unitPrice,
+        unitPrice: itemUnitPrice,
         totalPrice: itemTotal,
         quantity: item.quantity,
+        unit: item.unit,
+        standardUnitPrice: locationPrice.standardPrice,
+        standardUnitLabel: locationPrice.standardUnitLabel,
         source: 'history',
       });
       totalPrice += itemTotal;
@@ -346,12 +365,21 @@ export function estimateChannelPrice(
 
     const anyLocationPrice = getLatestPriceAnyLocation(records, item.productName);
     if (anyLocationPrice) {
-      const itemTotal = Number((anyLocationPrice.unitPrice * item.quantity).toFixed(2));
+      const itemTotal = calculateItemTotalFromStandardPrice(
+        anyLocationPrice.standardPrice,
+        anyLocationPrice.standardUnitLabel,
+        item.quantity,
+        item.unit
+      );
+      const itemUnitPrice = item.quantity > 0 ? Number((itemTotal / item.quantity).toFixed(2)) : 0;
       breakdown.push({
         productName: item.productName,
-        unitPrice: anyLocationPrice.unitPrice,
+        unitPrice: itemUnitPrice,
         totalPrice: itemTotal,
         quantity: item.quantity,
+        unit: item.unit,
+        standardUnitPrice: anyLocationPrice.standardPrice,
+        standardUnitLabel: anyLocationPrice.standardUnitLabel,
         source: 'estimated',
         estimatedFrom: anyLocationPrice.location,
       });
@@ -369,6 +397,17 @@ export function estimateChannelPrice(
     missingItems,
     isComplete: missingItems.length === 0,
   };
+}
+
+function calculateItemTotalFromStandardPrice(
+  standardPrice: number,
+  standardUnitLabel: string,
+  itemQuantity: number,
+  itemUnit: UnitType
+): number {
+  const conversion = UNIT_CONVERSIONS[itemUnit];
+  const standardQty = itemQuantity * conversion.toStandard;
+  return Number((standardPrice * standardQty).toFixed(2));
 }
 
 export function estimateAllChannels(

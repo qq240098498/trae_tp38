@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react';
-import { Plus, X, ShoppingCart, Trash2, CheckCircle2, Circle, Edit3, ChevronDown, ChevronUp, Store, Tag, TrendingDown, Info } from 'lucide-react';
+import { Plus, X, ShoppingCart, Trash2, CheckCircle2, Circle, Edit3, ChevronDown, ChevronUp, Store, Tag, TrendingDown, Info, Link2, Unlink } from 'lucide-react';
 import { usePurchaseStore } from '@/store/usePurchaseStore';
-import { CATEGORIES, UNIT_TYPES, COMMON_LOCATIONS, CATEGORY_ICONS, ShoppingListItemForm } from '@/types';
-import { suggestUnitForCategory, getLatestPriceAnyLocation } from '@/utils/priceCalculator';
+import { CATEGORIES, UNIT_TYPES, CATEGORY_ICONS, ShoppingListItemForm, UnitType } from '@/types';
+import { suggestUnitForCategory, getLatestPriceAnyLocation, estimateAllChannels } from '@/utils/priceCalculator';
+import { COMMON_LOCATIONS } from '@/types';
 
 const initialItemForm: ShoppingListItemForm = {
   productName: '',
@@ -22,6 +23,7 @@ export function ShoppingList() {
   const shoppingLists = usePurchaseStore(state => state.shoppingLists);
   const activeShoppingListId = usePurchaseStore(state => state.activeShoppingListId);
   const records = usePurchaseStore(state => state.records);
+  const products = usePurchaseStore(state => state.products);
   const createShoppingList = usePurchaseStore(state => state.createShoppingList);
   const deleteShoppingList = usePurchaseStore(state => state.deleteShoppingList);
   const setActiveShoppingList = usePurchaseStore(state => state.setActiveShoppingList);
@@ -30,15 +32,14 @@ export function ShoppingList() {
   const updateShoppingListItem = usePurchaseStore(state => state.updateShoppingListItem);
   const setItemManualPrice = usePurchaseStore(state => state.setItemManualPrice);
   const toggleShoppingListItem = usePurchaseStore(state => state.toggleShoppingListItem);
-  const getShoppingListPriceEstimates = usePurchaseStore(state => state.getShoppingListPriceEstimates);
-  const getActiveShoppingList = usePurchaseStore(state => state.getActiveShoppingList);
   const searchProducts = usePurchaseStore(state => state.searchProducts);
 
-  const activeList = getActiveShoppingList();
+  const activeList = shoppingLists.find(l => l.id === activeShoppingListId) || null;
+
   const priceEstimates = useMemo(() => {
-    if (!activeShoppingListId) return [];
-    return getShoppingListPriceEstimates(activeShoppingListId);
-  }, [activeShoppingListId, getShoppingListPriceEstimates]);
+    if (!activeList || activeList.items.length === 0) return [];
+    return estimateAllChannels(records, activeList.items, COMMON_LOCATIONS);
+  }, [records, activeList]);
 
   const bestDeal = priceEstimates[0];
 
@@ -71,12 +72,13 @@ export function ShoppingList() {
   };
 
   const handleSelectSuggestion = (productName: string) => {
+    const existingProduct = products.find(p => p.name === productName);
     const existingRecord = records.find(r => r.productName === productName);
     setItemForm(prev => ({
       ...prev,
       productName,
-      category: existingRecord?.category || prev.category,
-      unit: existingRecord?.unit || suggestUnitForCategory(existingRecord?.category || prev.category),
+      category: existingProduct?.category || existingRecord?.category || prev.category,
+      unit: existingProduct?.defaultUnit || existingRecord?.unit || suggestUnitForCategory(existingProduct?.category || existingRecord?.category || prev.category),
     }));
   };
 
@@ -221,15 +223,24 @@ export function ShoppingList() {
                   />
                   {productSuggestions.length > 0 && (
                     <div className="absolute z-20 w-full mt-1 bg-white border border-warmGray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                      {productSuggestions.map(name => (
-                        <button
-                          key={name}
-                          onClick={() => handleSelectSuggestion(name)}
-                          className="w-full px-4 py-2 text-left hover:bg-warmGray-50 transition-colors"
-                        >
-                          {name}
-                        </button>
-                      ))}
+                      {productSuggestions.map(name => {
+                        const linked = products.some(p => p.name === name);
+                        return (
+                          <button
+                            key={name}
+                            onClick={() => handleSelectSuggestion(name)}
+                            className="w-full px-4 py-2 text-left hover:bg-warmGray-50 transition-colors flex items-center gap-2"
+                          >
+                            <span>{name}</span>
+                            {linked && (
+                              <span className="px-2 py-0.5 text-xs bg-primary-50 text-primary-600 rounded-full flex items-center gap-1">
+                                <Link2 className="w-3 h-3" />
+                                已录入
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -288,13 +299,17 @@ export function ShoppingList() {
 
               {activeList.items.length === 0 ? (
                 <div className="text-center py-8 text-warmGray-400 border-2 border-dashed border-warmGray-200 rounded-xl">
-                  <PackageOpen className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <ShoppingCart className="w-12 h-12 mx-auto mb-3 opacity-50" />
                   <p>清单还是空的，添加一些商品吧</p>
                 </div>
               ) : (
                 <div className="space-y-2">
                   {activeList.items.map(item => {
+                    const isLinked = !!item.productId;
                     const latestPrice = getLatestPriceAnyLocation(records, item.productName);
+                    const productRecords = records.filter(r => r.productName === item.productName);
+                    const recordCount = productRecords.length;
+                    const locationCount = new Set(productRecords.map(r => r.location)).size;
                     return (
                       <div
                         key={item.id}
@@ -314,14 +329,33 @@ export function ShoppingList() {
                         </button>
 
                         <div className="flex-1 min-w-0">
-                          <div className={`font-medium ${item.checked ? 'line-through text-warmGray-400' : 'text-warmGray-800'}`}>
+                          <div className={`font-medium flex items-center gap-2 ${item.checked ? 'line-through text-warmGray-400' : 'text-warmGray-800'}`}>
                             {CATEGORY_ICONS[item.category]} {item.productName}
+                            {isLinked ? (
+                              <span className="px-2 py-0.5 text-xs bg-primary-50 text-primary-600 rounded-full flex items-center gap-1" title="已绑定系统商品，可使用历史价格比价">
+                                <Link2 className="w-3 h-3" />
+                                已绑定
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 text-xs bg-warmGray-100 text-warmGray-500 rounded-full flex items-center gap-1" title="未绑定系统商品，需手动录入价格">
+                                <Unlink className="w-3 h-3" />
+                                未绑定
+                              </span>
+                            )}
                           </div>
                           <div className="text-sm text-warmGray-500">
                             {item.quantity} {item.unit}
                             {latestPrice && (
                               <span className="ml-2">
-                                · 参考价 ¥{latestPrice.unitPrice}/{item.unit}
+                                · 参考价 ¥{latestPrice.unitPrice.toFixed(2)}/{latestPrice.unit}
+                                <span className="text-warmGray-400 ml-1">
+                                  (标准价 ¥{latestPrice.standardPrice.toFixed(2)}/{latestPrice.standardUnitLabel})
+                                </span>
+                              </span>
+                            )}
+                            {isLinked && recordCount > 0 && (
+                              <span className="ml-2 text-warmGray-400">
+                                · {recordCount}条记录 · {locationCount}个渠道
                               </span>
                             )}
                           </div>
@@ -339,7 +373,7 @@ export function ShoppingList() {
                             />
                             <select
                               value={item.unit}
-                              onChange={(e) => updateShoppingListItem(activeList.id, item.id, { unit: e.target.value as any })}
+                              onChange={(e) => updateShoppingListItem(activeList.id, item.id, { unit: e.target.value as UnitType })}
                               className="input-field w-20 py-1 text-sm"
                             >
                               {UNIT_TYPES.map(unit => (
@@ -384,7 +418,7 @@ export function ShoppingList() {
                   {bestDeal && (
                     <span className="ml-2 px-3 py-1 bg-secondary-100 text-secondary-700 rounded-full text-sm font-normal">
                       <TrendingDown className="w-4 h-4 inline mr-1" />
-                      最划算: {bestDeal.location} ¥{bestDeal.totalPrice}
+                      最划算: {bestDeal.location} ¥{bestDeal.totalPrice.toFixed(2)}
                     </span>
                   )}
                 </h3>
@@ -452,19 +486,30 @@ export function ShoppingList() {
                       {expandedEstimate === estimate.location && (
                         <div className="mt-4 pt-4 border-t border-warmGray-200">
                           <div className="space-y-2 mb-4">
-                            {estimate.itemBreakdown.map((item, idx) => {
-                              const sourceInfo = getPriceSourceLabel(item.source, item.estimatedFrom);
+                            {estimate.itemBreakdown.map((breakItem, idx) => {
+                              const sourceInfo = getPriceSourceLabel(breakItem.source, breakItem.estimatedFrom);
+                              const listItem = activeList.items.find(i => i.productName === breakItem.productName);
+                              const isLinked = !!listItem?.productId;
                               return (
                                 <div key={idx} className="flex items-center justify-between py-2">
                                   <div className="flex items-center gap-2">
-                                    <span className="text-warmGray-700">{item.productName}</span>
+                                    <span className="text-warmGray-700">{breakItem.productName}</span>
                                     <span className={`px-2 py-0.5 text-xs rounded-full ${sourceInfo.color}`}>
                                       {sourceInfo.label}
                                     </span>
+                                    {isLinked && (
+                                      <span className="px-2 py-0.5 text-xs bg-primary-50 text-primary-600 rounded-full flex items-center gap-0.5">
+                                        <Link2 className="w-3 h-3" />
+                                        绑定
+                                      </span>
+                                    )}
                                   </div>
                                   <div className="text-right">
                                     <div className="font-medium text-warmGray-800">
-                                      ¥{item.unitPrice.toFixed(2)} × {item.quantity} = ¥{item.totalPrice.toFixed(2)}
+                                      ¥{breakItem.unitPrice.toFixed(2)}/{breakItem.unit} × {breakItem.quantity}{breakItem.unit} = ¥{breakItem.totalPrice.toFixed(2)}
+                                    </div>
+                                    <div className="text-xs text-warmGray-500">
+                                      标准价 ¥{breakItem.standardUnitPrice.toFixed(2)}/{breakItem.standardUnitLabel}
                                     </div>
                                   </div>
                                 </div>
@@ -477,7 +522,8 @@ export function ShoppingList() {
                               <h4 className="text-sm font-medium text-warmGray-600 mb-2">需要手动录入价格的商品:</h4>
                               <div className="flex flex-wrap gap-2">
                                 {estimate.missingItems.map(name => (
-                                  <span key={name} className="px-3 py-1 bg-amber-50 text-amber-700 rounded-full text-sm">
+                                  <span key={name} className="px-3 py-1 bg-amber-50 text-amber-700 rounded-full text-sm flex items-center gap-1">
+                                    <Unlink className="w-3 h-3" />
                                     {name}
                                   </span>
                                 ))}
@@ -490,31 +536,40 @@ export function ShoppingList() {
                               手动录入{estimate.location}当前价格:
                             </h4>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              {activeList.items.map(item => (
-                                <div key={item.id} className="flex items-center gap-2">
-                                  <span className="flex-1 text-sm text-warmGray-700 truncate">
-                                    {item.productName} ({item.quantity}{item.unit})
-                                  </span>
-                                  <div className="flex items-center gap-1">
-                                    <span className="text-warmGray-500 text-sm">¥</span>
-                                    <input
-                                      type="number"
-                                      value={item.manualPrices[estimate.location] || ''}
-                                      onChange={(e) => setItemManualPrice(
-                                        activeList.id,
-                                        item.id,
-                                        estimate.location,
-                                        Number(e.target.value) || 0
-                                      )}
-                                      placeholder="单价"
-                                      min="0"
-                                      step="0.01"
-                                      className="input-field w-24 py-1 text-sm"
-                                    />
-                                    <span className="text-warmGray-500 text-sm">/{item.unit}</span>
+                              {activeList.items.map(item => {
+                                const existingPrice = item.manualPrices[estimate.location];
+                                const historyPrice = (() => {
+                                  const h = records
+                                    .filter(r => r.productName === item.productName && r.location === estimate.location)
+                                    .sort((a, b) => new Date(b.purchaseDate).getTime() - new Date(a.purchaseDate).getTime());
+                                  return h[0]?.unitPrice || null;
+                                })();
+                                return (
+                                  <div key={item.id} className="flex items-center gap-2">
+                                    <span className="flex-1 text-sm text-warmGray-700 truncate">
+                                      {item.productName} ({item.quantity}{item.unit})
+                                    </span>
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-warmGray-500 text-sm">¥</span>
+                                      <input
+                                        type="number"
+                                        value={existingPrice || ''}
+                                        onChange={(e) => setItemManualPrice(
+                                          activeList.id,
+                                          item.id,
+                                          estimate.location,
+                                          Number(e.target.value) || 0
+                                        )}
+                                        placeholder={historyPrice ? `历史¥${historyPrice.toFixed(2)}` : '单价'}
+                                        min="0"
+                                        step="0.01"
+                                        className="input-field w-28 py-1 text-sm"
+                                      />
+                                      <span className="text-warmGray-500 text-sm">/{item.unit}</span>
+                                    </div>
                                   </div>
-                                </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           </div>
                         </div>
@@ -523,7 +578,7 @@ export function ShoppingList() {
                   ))}
                 </div>
 
-                {priceEstimates.length >= 2 && bestDeal && (
+                {priceEstimates.length >= 1 && bestDeal && (
                   <div className="mt-6 p-4 bg-gradient-to-r from-secondary-50 to-primary-50 rounded-xl border border-secondary-200">
                     <div className="flex items-start gap-3">
                       <TrendingDown className="w-6 h-6 text-secondary-600 flex-shrink-0 mt-0.5" />
@@ -535,7 +590,7 @@ export function ShoppingList() {
                           预计总花费 <span className="font-bold text-lg">¥{bestDeal.totalPrice.toFixed(2)}</span>
                           {priceEstimates[1] && (
                             <>
-                              ，比第二便宜的 {priceEstimates[1].location} 节省 
+                              ，比第二便宜的 {priceEstimates[1].location} 节省
                               <span className="font-bold text-secondary-600">
                                 ¥{(priceEstimates[1].totalPrice - bestDeal.totalPrice).toFixed(2)}
                               </span>
@@ -554,31 +609,17 @@ export function ShoppingList() {
                 )}
               </div>
             )}
+
+            {activeList.items.length > 0 && priceEstimates.length === 0 && (
+              <div className="text-center py-6 text-warmGray-400 border-2 border-dashed border-warmGray-200 rounded-xl">
+                <Info className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                <p>暂无比价数据</p>
+                <p className="text-sm mt-1">添加已录入系统的商品或手动录入价格后即可比价</p>
+              </div>
+            )}
           </>
         )}
       </div>
     </div>
-  );
-}
-
-function PackageOpen(props: any) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M16.5 9.4 7.55 4.24" />
-      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-      <path d="M3.27 6.96 12 12.01l8.73-5.05" />
-      <path d="M12 22.08V12" />
-    </svg>
   );
 }

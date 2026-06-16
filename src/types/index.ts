@@ -116,6 +116,7 @@ export const CATEGORY_ICONS: Record<Category, string> = {
 
 export interface ShoppingListItem {
   id: string;
+  productId: string | null;
   productName: string;
   quantity: number;
   unit: UnitType;
@@ -140,6 +141,9 @@ export interface ChannelPriceEstimate {
     unitPrice: number;
     totalPrice: number;
     quantity: number;
+    unit: UnitType;
+    standardUnitPrice: number;
+    standardUnitLabel: string;
     source: 'history' | 'manual' | 'estimated';
     estimatedFrom?: string;
   }[];

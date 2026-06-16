@@ -283,9 +283,17 @@ export const usePurchaseStore = create<PurchaseState>()(
 
       addShoppingListItem: (listId: string, itemForm: ShoppingListItemForm) => {
         const state = get();
+        const existingProduct = state.products.find(p => p.name === itemForm.productName);
+        const productId = existingProduct?.id || null;
+        const category = existingProduct?.category || itemForm.category;
+        const unit = existingProduct?.defaultUnit || itemForm.unit;
         const newItem: ShoppingListItem = {
           id: generateId(),
-          ...itemForm,
+          productId,
+          productName: itemForm.productName,
+          quantity: itemForm.quantity,
+          unit,
+          category,
           manualPrices: {},
           checked: false,
         };
