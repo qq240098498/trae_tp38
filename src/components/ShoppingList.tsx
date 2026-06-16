@@ -1,7 +1,7 @@
-import { useState, useMemo } from 'react';
-import { Plus, X, ShoppingCart, Trash2, CheckCircle2, Circle, Edit3, ChevronDown, ChevronUp, Store, Tag, TrendingDown, Info, Link2, Unlink } from 'lucide-react';
+import { useState, useMemo, useRef, useEffect } from 'react';
+import { Plus, X, ShoppingCart, Trash2, CheckCircle2, Circle, Edit3, ChevronDown, ChevronUp, Store, Tag, TrendingDown, Info, Link2, Unlink, Search, Package } from 'lucide-react';
 import { usePurchaseStore } from '@/store/usePurchaseStore';
-import { CATEGORIES, UNIT_TYPES, CATEGORY_ICONS, ShoppingListItemForm, UnitType } from '@/types';
+import { CATEGORIES, UNIT_TYPES, CATEGORY_ICONS, ShoppingListItemForm, UnitType, Product } from '@/types';
 import { suggestUnitForCategory, getLatestPriceAnyLocation, estimateAllChannels } from '@/utils/priceCalculator';
 import { COMMON_LOCATIONS } from '@/types';
 
@@ -17,8 +17,12 @@ export function ShoppingList() {
   const [showNewListForm, setShowNewListForm] = useState(false);
   const [newListName, setNewListName] = useState('');
   const [itemForm, setItemForm] = useState<ShoppingListItemForm>(initialItemForm);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [expandedEstimate, setExpandedEstimate] = useState<string | null>(null);
+  const [showProductPicker, setShowProductPicker] = useState(false);
+  const [productPickerCategory, setProductPickerCategory] = useState<string>('全部');
+  const productPickerRef = useRef<HTMLDivElement>(null);
 
   const shoppingLists = usePurchaseStore(state => state.shoppingLists);
   const activeShoppingListId = usePurchaseStore(state => state.activeShoppingListId);
@@ -43,6 +47,34 @@ export function ShoppingList() {
 
   const bestDeal = priceEstimates[0];
 
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (productPickerRef.current && !productPickerRef.current.contains(event.target as Node)) {
+        setShowProductPicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const productsByCategory = useMemo(() => {
+    if (productPickerCategory === '全部') {
+      return products;
+    }
+    return products.filter(p => p.category === productPickerCategory);
+  }, [products, productPickerCategory]);
+
+  const handleSelectProduct = (product: Product) => {
+    setSelectedProduct(product);
+    setItemForm({
+      productName: product.name,
+      quantity: 1,
+      unit: product.defaultUnit,
+      category: product.category,
+    });
+    setShowProductPicker(false);
+  };
+
   const productSuggestions = useMemo(() => {
     if (!itemForm.productName.trim()) return [];
     return searchProducts(itemForm.productName).slice(0, 5);
@@ -56,9 +88,10 @@ export function ShoppingList() {
   };
 
   const handleAddItem = () => {
-    if (!activeShoppingListId || !itemForm.productName.trim() || itemForm.quantity <= 0) return;
+    if (!activeShoppingListId || !selectedProduct || itemForm.quantity <= 0) return;
     addShoppingListItem(activeShoppingListId, itemForm);
-    setItemForm({ ...initialItemForm, category: itemForm.category });
+    setSelectedProduct(null);
+    setItemForm({ ...initialItemForm });
   };
 
   const handleItemFormChange = (field: keyof ShoppingListItemForm, value: string | number) => {
@@ -72,14 +105,10 @@ export function ShoppingList() {
   };
 
   const handleSelectSuggestion = (productName: string) => {
-    const existingProduct = products.find(p => p.name === productName);
-    const existingRecord = records.find(r => r.productName === productName);
-    setItemForm(prev => ({
-      ...prev,
-      productName,
-      category: existingProduct?.category || existingRecord?.category || prev.category,
-      unit: existingProduct?.defaultUnit || existingRecord?.unit || suggestUnitForCategory(existingProduct?.category || existingRecord?.category || prev.category),
-    }));
+    const product = products.find(p => p.name === productName);
+    if (product) {
+      handleSelectProduct(product);
+    }
   };
 
   const getPriceSourceLabel = (source: 'history' | 'manual' | 'estimated', estimatedFrom?: string) => {
@@ -211,51 +240,97 @@ export function ShoppingList() {
               <h3 className="font-semibold text-warmGray-700 mb-3 flex items-center gap-2">
                 <Plus className="w-5 h-5 text-primary-500" />
                 添加商品到清单
+                <span className="text-sm font-normal text-warmGray-500">
+                  （只能从已录入的商品中选择）
+                </span>
               </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-                <div className="lg:col-span-2 relative">
-                  <input
-                    type="text"
-                    value={itemForm.productName}
-                    onChange={(e) => handleItemFormChange('productName', e.target.value)}
-                    placeholder="商品名称，如：牛奶、大米"
-                    className="input-field"
-                  />
-                  {productSuggestions.length > 0 && (
-                    <div className="absolute z-20 w-full mt-1 bg-white border border-warmGray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                      {productSuggestions.map(name => {
-                        const linked = products.some(p => p.name === name);
-                        return (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="lg:col-span-2 relative" ref={productPickerRef}>
+                  <div
+                    className="input-field flex items-center gap-2 cursor-pointer"
+                    onClick={() => setShowProductPicker(!showProductPicker)}
+                  >
+                    <Search className="w-4 h-4 text-warmGray-400 flex-shrink-0" />
+                    {selectedProduct ? (
+                      <span className="text-warmGray-800 flex-1 truncate">
+                        {CATEGORY_ICONS[selectedProduct.category as keyof typeof CATEGORY_ICONS]} {selectedProduct.name}
+                      </span>
+                    ) : (
+                      <span className="text-warmGray-400 flex-1">点击选择商品...</span>
+                    )}
+                    <ChevronDown className={`w-4 h-4 text-warmGray-400 transition-transform ${showProductPicker ? 'rotate-180' : ''}`} />
+                  </div>
+                  {showProductPicker && (
+                    <div className="absolute z-30 w-full mt-1 bg-white border border-warmGray-200 rounded-lg shadow-xl max-h-96 overflow-hidden">
+                      <div className="p-3 border-b border-warmGray-100 bg-warmGray-50">
+                        <div className="flex flex-wrap gap-1">
                           <button
-                            key={name}
-                            onClick={() => handleSelectSuggestion(name)}
-                            className="w-full px-4 py-2 text-left hover:bg-warmGray-50 transition-colors flex items-center gap-2"
+                            onClick={() => setProductPickerCategory('全部')}
+                            className={`px-3 py-1 text-sm rounded-full transition-colors ${
+                              productPickerCategory === '全部'
+                                ? 'bg-primary-500 text-white'
+                                : 'bg-white text-warmGray-600 hover:bg-warmGray-100'
+                            }`}
                           >
-                            <span>{name}</span>
-                            {linked && (
-                              <span className="px-2 py-0.5 text-xs bg-primary-50 text-primary-600 rounded-full flex items-center gap-1">
-                                <Link2 className="w-3 h-3" />
-                                已录入
-                              </span>
-                            )}
+                            全部
                           </button>
-                        );
-                      })}
+                          {CATEGORIES.map(cat => (
+                            <button
+                              key={cat}
+                              onClick={() => setProductPickerCategory(cat)}
+                              className={`px-3 py-1 text-sm rounded-full transition-colors ${
+                                productPickerCategory === cat
+                                  ? 'bg-primary-500 text-white'
+                                  : 'bg-white text-warmGray-600 hover:bg-warmGray-100'
+                              }`}
+                            >
+                              {CATEGORY_ICONS[cat as keyof typeof CATEGORY_ICONS]} {cat}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="max-h-64 overflow-y-auto">
+                        {productsByCategory.length === 0 ? (
+                          <div className="p-6 text-center text-warmGray-400">
+                            <Package className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                            <p>暂无商品，请先在采购记录中添加</p>
+                          </div>
+                        ) : (
+                          productsByCategory.map(product => {
+                            const isSelected = selectedProduct?.id === product.id;
+                            const recordCount = records.filter(r => r.productName === product.name).length;
+                            return (
+                              <button
+                                key={product.id}
+                                onClick={() => handleSelectProduct(product)}
+                                className={`w-full px-4 py-3 text-left transition-colors flex items-center justify-between ${
+                                  isSelected
+                                    ? 'bg-primary-50 border-l-4 border-primary-500'
+                                    : 'hover:bg-warmGray-50 border-l-4 border-transparent'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span className="text-lg">
+                                    {CATEGORY_ICONS[product.category as keyof typeof CATEGORY_ICONS]}
+                                  </span>
+                                  <div>
+                                    <div className="font-medium text-warmGray-800">{product.name}</div>
+                                    <div className="text-xs text-warmGray-500">
+                                      默认单位：{product.defaultUnit}
+                                      {recordCount > 0 && ` · ${recordCount}条记录`}
+                                    </div>
+                                  </div>
+                                </div>
+                                {isSelected && (
+                                  <CheckCircle2 className="w-5 h-5 text-primary-500" />
+                                )}
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
                     </div>
                   )}
-                </div>
-                <div>
-                  <select
-                    value={itemForm.category}
-                    onChange={(e) => handleItemFormChange('category', e.target.value)}
-                    className="input-field"
-                  >
-                    {CATEGORIES.map(cat => (
-                      <option key={cat} value={cat}>
-                        {CATEGORY_ICONS[cat as keyof typeof CATEGORY_ICONS]} {cat}
-                      </option>
-                    ))}
-                  </select>
                 </div>
                 <div className="flex gap-2">
                   <input
@@ -266,11 +341,13 @@ export function ShoppingList() {
                     min="0"
                     step="0.01"
                     className="input-field flex-1"
+                    disabled={!selectedProduct}
                   />
                   <select
                     value={itemForm.unit}
                     onChange={(e) => handleItemFormChange('unit', e.target.value)}
                     className="input-field w-24"
+                    disabled={!selectedProduct}
                   >
                     {UNIT_TYPES.map(unit => (
                       <option key={unit} value={unit}>{unit}</option>
@@ -279,13 +356,25 @@ export function ShoppingList() {
                 </div>
                 <button
                   onClick={handleAddItem}
-                  disabled={!itemForm.productName.trim() || itemForm.quantity <= 0}
-                  className="btn-primary w-full flex items-center justify-center gap-2"
+                  disabled={!selectedProduct || itemForm.quantity <= 0}
+                  className="btn-primary w-full flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Plus className="w-5 h-5" />
                   添加
                 </button>
               </div>
+              {!selectedProduct && products.length > 0 && (
+                <p className="mt-2 text-sm text-warmGray-500 flex items-center gap-1">
+                  <Info className="w-4 h-4" />
+                  请先从上方选择一个已录入的商品
+                </p>
+              )}
+              {products.length === 0 && (
+                <p className="mt-2 text-sm text-amber-600 flex items-center gap-1">
+                  <Info className="w-4 h-4" />
+                  系统中还没有商品，请先在"录入采购"中添加商品记录
+                </p>
+              )}
             </div>
 
             <div className="mb-6">
